@@ -3,27 +3,172 @@ title: "final project"
 output: html_document
 date: "2023-06-20"
 ---
+## Load the packages and data
 
 ```{r setup, include=FALSE}
-read_csv(gzfile("data/city_day"))
+
+library(dplyr)
+library(ggplot2)
+library(modelr)
+library(lubridate)
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+```{r setup, include=FALSE}
+city_day_agg=read.csv(gzfile("city_day_agg_cleaned.csv.gz"))
+country_day_agg=read.csv(gzfile("country_day_agg_cleaned.csv.gz"))
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+head(city_day_agg)
+head(country_day_agg)
 ```
 
-## Including Plots
+## play with USA data
+```{r usa cities}
+city_day_agg%>%
+  filter(countryCode=="USA",parameter=="pm25")%>%
+  mutate(date=as.Date(date))%>%
+  count(date)%>%
+  ggplot(aes(x=date,y=n))+
+  geom_point()
+```
 
-You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r usa from country}
+#takeaway: there are null values in the dataset
+country_day_agg%>%
+  filter(countryCode=="USA")%>%
+  ggplot(aes(x=as.Date(date),y=mean,color=parameter))+
+  geom_point()+
+  geom_smooth()+
+  scale_y_log10()+
+  xlab("Date")+
+  ylab("values")
+
+
+country_day_agg%>%
+  filter(countryCode=="USA")%>%
+  mutate(date=as.Date(date),yr_mo=format(as.Date(date), "%Y-%m"))%>%
+  group_by(parameter,yr_mo)%>%
+  summarize(count=n(),values=mean(mean))%>%
+  ggplot(aes(x=yr_mo,y=values,color=parameter))+
+  geom_point()+
+  geom_smooth()+
+  scale_y_log10()+
+  xlab("Date")+
+  ylab("values")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+separare the data into prev covid and during covid
+
+```{r usa from country+covid19 factor}
+country_day_agg%>%
+  filter(countryCode=="USA")%>%
+  mutate(during_covid=date>"2019-12-31")%>%
+  group_by(during_covid,parameter)%>%
+  summarize(min(mean),max(mean))
+
+
+country_day_agg%>%
+  filter(countryCode=="USA")%>%
+  mutate(during_covid=date>"2019-12-31")%>%
+  ggplot(aes(x=mean,color=during_covid,fill=during_covid))+
+  geom_density(position = "identity",alpha=0.5)+
+  facet_wrap(~parameter)+
+  scale_x_log10()
+```
+
+for usa,we can see that 
+(1) in 2020, NO2 level decreases b/c we see more days with lower NO2 levels;
+(2) 03 level increases in 2020 b/c the distribution is about the same for prev-covid and 2020 but we see more days with high 03 values;
+(3)pm2.5 level decreases in 2020 b/c we see more days with less pm2.5 levels
+## play with the world dataset
+
+here is the one for the country dataset
+
+```{r world, echo=FALSE}
+median_values=country_day_agg%>%
+  mutate(in2020=date>"2019-12-31")%>%
+  group_by(countryCode,in2020,parameter)%>%
+  summarize(avg_value=mean(mean))%>%
+  ungroup()%>%
+  group_by(in2020,parameter)%>%
+  summarize(med_val=median(avg_value,na.rm = TRUE))
+
+country_day_agg%>%
+  mutate(in2020=date>"2019-12-31")%>%
+  group_by(countryCode,in2020,parameter)%>%
+  summarize(avg_value=mean(mean))%>%
+  left_join(median_values,by=c("in2020","parameter"))%>%
+  ggplot(aes(x=avg_value,color=in2020,fill=in2020))+
+  geom_density(position = "identity",alpha=0.5)+
+  facet_wrap(~parameter)
+
+add_medians=function(par){
+  df=country_day_agg%>%
+  mutate(in2020=date>"2019-12-31")%>%
+  filter(parameter==par)%>%
+  group_by(countryCode,in2020)%>%
+  summarize(avg_value=mean(mean))
+  
+  median=df%>%
+    ungroup()%>%
+    group_by(in2020)%>%
+    summarize(med=median(avg_value,na.rm=TRUE))
+  
+  df%>%
+    ggplot(aes(x=avg_value,color=in2020,fill=in2020))+
+    geom_density(position = "identity",alpha=0.5)+
+    geom_vline(data=median,aes(xintercept=med,color=in2020))
+}
+
+add_medians("no2")
+
+```
+
+
+```{r world+rows check, echo=FALSE}
+country_day_agg%>%
+  filter(date>"2019-12-31")%>%
+  select(countryCode)%>%
+  unique()%>%
+  nrow()
+```
+here is the graph using city dataset
+
+```{r world, echo=FALSE}
+city_day_agg%>%
+  mutate(in2020=date>"2019-12-31")%>%
+  group_by(city_id,in2020,parameter)%>%
+  summarize(mean=mean(mean))%>%
+  ggplot(aes(x=mean,color=in2020,fill=in2020))+
+  geom_density(position = "identity",alpha=0.5)+
+  facet_wrap(~parameter)
+  
+add_medians2=function(par){
+  df=city_day_agg%>%
+  mutate(in2020=date>"2019-12-31")%>%
+  filter(parameter==par)%>%
+  group_by(city_id,in2020)%>%
+  summarize(avg_value=mean(mean))
+  
+  median=df%>%
+    ungroup()%>%
+    group_by(in2020)%>%
+    summarize(med=median(avg_value,na.rm=TRUE))
+  
+  df%>%
+    ggplot(aes(x=avg_value,color=in2020,fill=in2020))+
+    geom_density(position = "identity",alpha=0.5)+
+    geom_vline(data=median,aes(xintercept=med,color=in2020))
+}
+add_medians2("o3")
+  
+```
+
+
+
+
+```{r world, echo=FALSE}
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
