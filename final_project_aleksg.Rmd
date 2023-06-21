@@ -1,0 +1,192 @@
+---
+title: "final project"
+output: html_document
+date: "2023-06-20"
+---
+
+```{r, import}
+library(here)
+library(scales)
+library(tidyverse)
+library(readr)
+library(modelr)
+library(ggplot2)
+library(dplyr)
+
+theme_set(theme_bw())
+
+options(repr.plot.width=4, repr.plot.height=3)
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Import the data
+
+```{r setup, include=FALSE}
+city_day_agg_cleaned <- read_csv(gzfile("data/city_day_agg_cleaned.csv.gz"), 
+                                 show_col_types = FALSE)
+
+country_day_agg_cleaned <- read_csv(gzfile("data/country_day_agg_cleaned.csv.gz"), 
+                                    show_col_types = FALSE)
+```
+
+# Cleaning the Data
+
+```{r, cleaning data}
+
+
+# -----------data cleaning & exploration-----------------
+
+# removing rows that are !pm25
+city_day_agg_cleaned_pm25 <- city_day_agg_cleaned[city_day_agg_cleaned$parameter == "pm25", ]
+
+country_day_agg_cleaned_pm25 <- country_day_agg_cleaned[country_day_agg_cleaned$parameter == "pm25", ]
+
+# joining the two tables on country 
+city_and_country_pm25 <- left_join(city_day_agg_cleaned_pm25, country_day_agg_cleaned_pm25, 
+                                  by = c('countryCode', 'date'), 
+                                  suffix = c('.city', '.country'))
+
+# removing months aside from January-May
+city_and_country_pm25_jan_may <- city_and_country_pm25 %>% 
+  filter(substr(date, 6, 7) %in% c("01", "02", "03", "04", "05"))
+
+#partition the data set 2020 and !2020, group by country, find the average, and plot those averages 
+
+city_and_country_pm25_jan_may_3year <- city_and_country_pm25_jan_may %>%
+  filter(year(date) < 2020)
+
+city_and_country_pm25_jan_may_2020 <- city_and_country_pm25_jan_may %>%
+  filter(year(date) == 2020)
+
+unique(city_day_agg_cleaned$parameter)
+#  [1] "no2"  "o3"   "pm25"
+
+unique(year(city_day_agg_cleaned_pm25$date))
+# [1] 2017 2018 2019 2020
+
+unique(year(country_day_agg_cleaned_pm25$date))
+# [1] 2017 2019 2020 2018
+
+
+```
+
+# Mean by Country 
+
+```{r, by country }
+
+#finding the averages per country
+avg_3year_by_country <- city_and_country_pm25_jan_may_3year %>% 
+  group_by(countryCode, date) %>% 
+  summarize(mean_3year = mean(mean.country, na.rm = TRUE))
+
+avg_2020_by_country <- city_and_country_pm25_jan_may_2020 %>% 
+  group_by(countryCode, date) %>% 
+  summarize(mean_2020 = mean(mean.country, na.rm = TRUE))
+
+#checking if both data sets have the same countries
+length(unique(avg_2020_by_country$countryCode))
+#[1] 39
+
+length(unique(avg_3year_by_country$countryCode))
+# [1] 34
+
+# removing countries that are present in one and not the other data set 
+common_countries <- intersect(avg_2020_by_country$countryCode, avg_3year_by_country$countryCode)
+
+# dropping countries in both data sets that are not common to both data sets
+avg_2020_by_country <- avg_2020_by_country %>%
+  filter(countryCode %in% common_countries)
+
+avg_3year_by_country <- avg_3year_by_country %>%
+  filter(countryCode %in% common_countries)
+
+# checking if the length of unique countries is equal now:
+length(unique(avg_2020_by_country$countryCode))
+#[1] 31
+
+length(unique(avg_3year_by_country$countryCode))
+# [1] 31
+
+```
+
+# Plot the results by Country
+
+```{r, plot figure 1 by country average}
+
+ggplot() +
+  geom_density(data = avg_3year_by_country, aes(x = mean_3year, fill = "mean_3year"), color = "turquoise") +
+  geom_density(data = avg_2020_by_country, aes(x = mean_2020, fill = "mean_2020"), color = "pink") +
+  xlab("PM2.5 micrograms/m3") +
+  ylab("Density") +
+  scale_x_continuous(breaks = seq(0, 125, 25)) +
+  xlim(0, 125) + 
+  scale_fill_manual(values = c("mean_3year" = "turquoise", "mean_2020" = "pink"),
+                    labels = c("mean_2020", "mean_3year"),
+                    guide = guide_legend(title = "Legend"))
+
+
+```
+
+
+
+
+# Mean by City 
+
+```{r, cleaning by city}
+
+#finding the averages per city
+avg_3year_by_city <- city_and_country_pm25_jan_may_3year %>% 
+  group_by(city_id, date) %>% 
+  summarize(mean_3year = mean(mean.country, na.rm = TRUE)) %>% ungroup()
+
+avg_2020_by_city <- city_and_country_pm25_jan_may_2020 %>% 
+  group_by(city_id, date) %>% 
+  summarize(mean_2020 = mean(mean.country, na.rm = TRUE))
+
+#checking if both data sets have the same cities
+length(unique(avg_2020_by_city$city_id))
+#[1] 854
+
+length(unique(avg_3year_by_city$city_id))
+# [1] 899
+
+# removing cities that are present in one and not the other data set 
+common_cities <- intersect(avg_2020_by_city$city_id, avg_3year_by_city$city_id)
+
+# dropping cities in both data sets that are not common to both data sets
+avg_2020_by_city <- avg_2020_by_city %>%
+  filter(city_id %in% common_cities)
+
+avg_3year_by_city <- avg_3year_by_city %>%
+  filter(city_id %in% common_cities)
+
+length(unique(avg_2020_by_city$city_id))
+#[1] 762
+
+length(unique(avg_3year_by_city$city_id))
+# [1] 762
+
+
+```
+
+# Plot the results by city
+
+```{r, plot figure 1 by city average}
+
+ggplot() +
+  geom_density(data = avg_3year_by_city, aes(x = mean_3year, fill = "mean_3year"), color = "turquoise") +
+  geom_density(data = avg_2020_by_city, aes(x = mean_2020, fill = "mean_2020"), color = "pink") +
+  xlab("PM2.5 micrograms/m3") +
+  ylab("Density") +
+  scale_x_continuous(breaks = seq(0, 125, 25)) +
+  xlim(0, 125) + 
+  scale_fill_manual(values = c("mean_3year" = "turquoise", "mean_2020" = "pink"),
+                    labels = c("mean_2020", "mean_3year"),
+                    guide = guide_legend(title = "Legend"))
+
+
+```
+
+
