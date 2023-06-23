@@ -1,20 +1,25 @@
 ---
 title: "final project"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 date: "2023-06-20"
 ---
-## Load the packages and data
 
-```{r setup, include=FALSE}
+# Load the packages and data
+
+```{r setup libraries, include=FALSE}
 
 library(dplyr)
 library(ggplot2)
 library(modelr)
 library(lubridate)
+library(tidyr)
 ```
 
 
-```{r setup, include=FALSE}
+```{r setup data, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 city_day_agg=read.csv(gzfile("city_day_agg_cleaned.csv.gz"))
 country_day_agg=read.csv(gzfile("country_day_agg_cleaned.csv.gz"))
 
@@ -32,7 +37,7 @@ city_day_agg%>%
   geom_point()
 ```
 
-
+certain days in usa have more data points collected
 ```{r usa from country}
 #takeaway: there are null values in the dataset
 country_day_agg%>%
@@ -43,7 +48,7 @@ country_day_agg%>%
   scale_y_log10()+
   xlab("Date")+
   ylab("values")
-
+#missing values for some days, see geom_smooth parts
 
 country_day_agg%>%
   filter(countryCode=="USA")%>%
@@ -81,10 +86,13 @@ for usa,we can see that
 (1) in 2020, NO2 level decreases b/c we see more days with lower NO2 levels;
 (2) 03 level increases in 2020 b/c the distribution is about the same for prev-covid and 2020 but we see more days with high 03 values;
 (3)pm2.5 level decreases in 2020 b/c we see more days with less pm2.5 levels
-## play with the world dataset
+
+
+
+# play with the world dataset
 
 here is the one for the country dataset
-
+## country datasets
 ```{r world, echo=FALSE}
 median_values=country_day_agg%>%
   mutate(in2020=date>"2019-12-31")%>%
@@ -94,18 +102,34 @@ median_values=country_day_agg%>%
   group_by(in2020,parameter)%>%
   summarize(med_val=median(avg_value,na.rm = TRUE))
 
+
+#we only wants months from 1-5
 country_day_agg%>%
   mutate(in2020=date>"2019-12-31")%>%
+  mutate(date=as.Date(date))%>%
+  mutate(jan_may=month(date)<=5)%>%
+  filter(jan_may==TRUE)%>%
   group_by(countryCode,in2020,parameter)%>%
   summarize(avg_value=mean(mean))%>%
   left_join(median_values,by=c("in2020","parameter"))%>%
   ggplot(aes(x=avg_value,color=in2020,fill=in2020))+
   geom_density(position = "identity",alpha=0.5)+
   facet_wrap(~parameter)
+```
 
+even though our graph looks different from what authors have on the papers, the trends are the same:
+1. for no2, in2020 graph shifts to the left, which means no2 levels decreases overall.
+2. for o3, in2020 graph shifts to the right, which means 03 level increases overall
+3. for pm25, in2020 graph shifts to the left, which means pm25 level decreases overall.
+```{r world, echo=FALSE}
+
+#add medians to the graph
 add_medians=function(par){
   df=country_day_agg%>%
   mutate(in2020=date>"2019-12-31")%>%
+  mutate(date=as.Date(date))%>%
+  mutate(jan_may=month(date)<=5)%>%
+  filter(jan_may==TRUE)%>%
   filter(parameter==par)%>%
   group_by(countryCode,in2020)%>%
   summarize(avg_value=mean(mean))
@@ -121,35 +145,105 @@ add_medians=function(par){
     geom_vline(data=median,aes(xintercept=med,color=in2020))
 }
 
-add_medians("no2")
+add_medians("pm25")
 
 ```
-
+unequal number of countries before 2020 and after 2020
 
 ```{r world+rows check, echo=FALSE}
 country_day_agg%>%
   filter(date>"2019-12-31")%>%
+  mutate(date=as.Date(date))%>%
+  mutate(jan_may=month(date)<=5)%>%
+  filter(jan_may==TRUE)%>%
+  select(countryCode)%>%
+  unique()%>%
+  nrow()
+
+country_day_agg%>%
+  filter(date<"2019-12-31")%>%
+  mutate(date=as.Date(date))%>%
+  mutate(jan_may=month(date)<=5)%>%
+   filter(jan_may==TRUE)%>%
   select(countryCode)%>%
   unique()%>%
   nrow()
 ```
-here is the graph using city dataset
+## here is the graph using city dataset
 
-```{r world, echo=FALSE}
+overall patterns in no2, o3, and pm25 are less obvious
+density distribution is very clustered
+
+```{r cities dataset, echo=FALSE}
 city_day_agg%>%
   mutate(in2020=date>"2019-12-31")%>%
+  mutate(date=as.Date(date))%>%
+  mutate(jan_may=month(date)<=5)%>%
+  filter(jan_may==TRUE)%>%
   group_by(city_id,in2020,parameter)%>%
   summarize(mean=mean(mean))%>%
   ggplot(aes(x=mean,color=in2020,fill=in2020))+
   geom_density(position = "identity",alpha=0.5)+
   facet_wrap(~parameter)
-  
+```
+separate data into two dataframes, one before 2020 and one after 2020
+
+```{r world country check, echo=FALSE}
+#during pandemic, we have 50 countries
+cities_2020=city_day_agg%>%
+  mutate(in2020=date>"2019-12-31")%>%
+  filter(in2020==TRUE)%>%
+  mutate(date=as.Date(date))%>%
+  mutate(jan_may=month(date)<=5)%>%
+  filter(jan_may==TRUE)%>%
+  #count(country)%>%
+  #nrow()
+  group_by(countryCode,city_id,parameter)%>%
+  summarize(yr2020=mean(mean))
+
+#before pandemic, we have 56 countries 
+cities_yr=city_day_agg%>%
+  mutate(in2020=date>"2019-12-31")%>%
+  filter(in2020==FALSE)%>%
+  mutate(date=as.Date(date))%>%
+  mutate(jan_may=month(date)<=5)%>%
+  filter(jan_may==TRUE)%>%
+  #count(country)%>%
+  #nrow()
+  group_by(countryCode,city_id,parameter)%>%
+  summarize(yr3_avg=mean(mean))
+```
+
+
+```{r world country check, echo=FALSE}
+#filter out countries that are common in 20202 and before 2020
+inner_join(cities_2020,cities_yr,by=c("countryCode","city_id","parameter"))%>%
+  #filter(parameter=="pm25")%>%
+  group_by(countryCode,city_id,parameter)%>%
+  ggplot()+
+  geom_density(aes(x=yr2020,color="pink",fill="pink",alpha=0.5))+
+  geom_density(aes(x=yr3_avg,color="turquoise",fill="turquoise",alpha=0.5))+
+  #geom_vline(aes(xintercept=mean(cities_yr$yr3_avg)))+
+  #geom_vline(aes(xintercept=median(cities_2020$yr2020)))
+  facet_wrap(~parameter)
+
+
+```
+
+
+```{r world, echo=FALSE}
 add_medians2=function(par){
+  
+
   df=city_day_agg%>%
   mutate(in2020=date>"2019-12-31")%>%
+  mutate(date=as.Date(date))%>%
+  mutate(jan_may=month(date)<=5)%>%
+  filter(jan_may==TRUE)%>%
   filter(parameter==par)%>%
   group_by(city_id,in2020)%>%
   summarize(avg_value=mean(mean))
+
   
   median=df%>%
     ungroup()%>%
@@ -161,14 +255,135 @@ add_medians2=function(par){
     geom_density(position = "identity",alpha=0.5)+
     geom_vline(data=median,aes(xintercept=med,color=in2020))
 }
-add_medians2("o3")
+add_medians2("pm25")
   
+```
+after i aggregate city data to get country data, the pattern becomes less obvious.
+
+
+
+# mapping
+
+```{r world map, echo=FALSE}
+WorldData <- map_data('world') 
+
+lon_lat_data=read.csv("openaq_cities.csv")
+
+df_datasets=inner_join(cities_2020,cities_yr,by=c("countryCode","city_id","parameter"))%>%
+  left_join(lon_lat_data,by=c("countryCode","city_id"))%>%
+  mutate(perc_chg=(yr2020-yr3_avg)/yr3_avg*100)
+  
+  
+per_chg_plot=function(par){
+df_t=df_datasets%>%filter(parameter==par)
+ggplot()+
+  geom_polygon(data=WorldData,aes(x=long,y=lat,group=group),fill = "white", colour = "grey50")+
+  geom_point(data=df_t,aes(x=Lon,y=Lat,color=perc_chg),shape=1)+
+  coord_cartesian(xlim = c(-115,145),ylim=c(-55,70))+
+  scale_color_continuous(high="orange",low="purple",limits=c(-20,20))
+}
+per_chg_plot("pm25")
+```
+my graph has more points compared with maps on Fig1. We have more cities.
+
+# modeling
+```{r modeling usa, echo=FALSE}
+df_in2020_ornot=country_day_agg%>%
+  mutate(in2020=date>"2019-12-31",mon=month(as.Date(date),label=TRUE),wkd=weekdays(as.Date(date)))%>%
+  mutate(is_weekend=wkd %in% c("Saturday","Sunday"))
+
+#usa data in2020
+df2020_usa=df_in2020_ornot%>%
+  filter(in2020==TRUE,countryCode=="USA")%>%
+  filter(date>="2020-03-15")%>%
+  drop_na()%>%
+  group_by(parameter,mon,is_weekend)%>%
+  summarize(mean=mean(mean,na.rm = TRUE))
+
+#usa data before 2020
+df_b420_usa=df_in2020_ornot%>%
+  filter(in2020==FALSE,countryCode=="USA")%>%
+  filter(mon %in% c("Mar","Apr","May"))%>%
+  drop_na()%>%
+  #group_by(parameter,year(as.Date(date)),mon,is_weekend)%>%
+  group_by(parameter,mon,is_weekend)%>%
+  summarize(mean=mean(mean,na.rm = TRUE))
+
+#modeling usa
+model_usa=lm(mean~parameter+mon+is_weekend,df_b420_usa)
+#rmse(model_usa,df_b420_usa)
+df_b420_usa%>%
+  add_predictions(model_usa)%>%
+  group_by(parameter)%>%
+  summarize(rmse=sqrt(mean((pred-mean)^2)),
+            cor=cor(pred,mean),
+            cor_sq=cor^2)
 ```
 
 
+```{r modeling switzerland, echo=FALSE}
+#sw data in2020
+df2020_sw=df_in2020_ornot%>%
+  filter(in2020==TRUE,countryCode=="CHE")%>%
+  filter(date>="2020-03-16")%>%
+  drop_na()%>%
+  group_by(parameter,mon,is_weekend)%>%
+  summarize(mean=mean(mean,na.rm = TRUE))
+
+#sw data before 2020
+df_b420_sw=df_in2020_ornot%>%
+  filter(in2020==FALSE,countryCode=="CHE")%>%
+  filter(mon %in% c("Mar","Apr","May"))%>%
+  drop_na()%>%
+  group_by(parameter,mon,is_weekend)%>%
+  summarize(mean=mean(mean,na.rm = TRUE))
+
+#modeling usa
+model_sw=lm(mean~parameter+mon+is_weekend,df_b420_sw)
+df_b420_sw%>%
+  add_predictions(model_sw)%>%
+  group_by(parameter)%>%
+  summarize(rmse=sqrt(mean((pred-mean)^2)),
+            cor=cor(pred,mean),
+            cor_sq=cor^2)
+
+```
 
 
-```{r world, echo=FALSE}
+```{r modeling, echo=FALSE}
+#compare modeling data with actual data
+usa_chg=df2020_usa%>%
+  add_predictions(model_usa)%>%
+  mutate(per_chg=(mean-pred)/mean*100)%>%
+  group_by(parameter)%>%
+  summarize(chg=mean(per_chg),se=sd(per_chg)/sqrt(length(per_chg)))%>%
+  mutate(country="USA")
+
+sw_chg=df2020_sw%>%
+  add_predictions(model_sw)%>%
+  mutate(per_chg=(mean-pred)/mean*100)%>%
+  group_by(parameter)%>%
+  summarize(chg=mean(per_chg),se=sd(per_chg)/sqrt(length(per_chg)))%>%
+  mutate(country="CHE")
+
+rbind(usa_chg,sw_chg)%>%
+  ggplot(aes(x=chg,y=country))+
+  geom_point(aes(color=chg>0))+
+  facet_wrap(~parameter)+
+  geom_pointrange(aes(y=country,xmin=chg-se,xmax=chg+se))+
+  geom_vline(xintercept = 0,linetype="dotted")+
+  scale_x_continuous(limits=c(-150,100))
+  
+  
+```
+
+# future research
+- factor in pop density data for modeling
+- 
+```{r modeling, echo=FALSE}
+
+
+
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
